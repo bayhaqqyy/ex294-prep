@@ -1,0 +1,3 @@
+---
+balancer_backend_group: webservers
+balancer_port: 80

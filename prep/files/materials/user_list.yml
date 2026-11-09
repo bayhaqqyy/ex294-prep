@@ -1,0 +1,14 @@
+---
+users:
+  - name: bob
+    job: developer
+    uid: 3000
+    password_expire_days: 10
+  - name: sally
+    job: manager
+    uid: 3001
+    password_expire_days: 20
+  - name: fred
+    job: developer
+    uid: 3002
+    password_expire_days: 30

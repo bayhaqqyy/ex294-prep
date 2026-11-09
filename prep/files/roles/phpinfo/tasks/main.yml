@@ -1,0 +1,40 @@
+---
+- name: Install httpd and php
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - php
+    state: present
+
+- name: Deploy hello.php
+  ansible.builtin.template:
+    src: hello.php.j2
+    dest: "{{ phpinfo_docroot }}/hello.php"
+    mode: "0644"
+
+- name: Deploy a default index page (only when none exists)
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ phpinfo_docroot }}/index.html"
+    mode: "0644"
+    force: false
+
+- name: Start and enable httpd
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+
+- name: Check firewalld state
+  ansible.builtin.command: firewall-cmd --state
+  register: phpinfo_fw
+  changed_when: false
+  failed_when: false
+
+- name: Open http in firewalld (permanent + runtime)
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --query-service=http && firewall-cmd --query-service=http && exit 0
+    firewall-cmd --permanent --add-service=http && firewall-cmd --reload && echo changed
+  register: phpinfo_fw_open
+  changed_when: "'changed' in phpinfo_fw_open.stdout"
+  when: phpinfo_fw.rc == 0

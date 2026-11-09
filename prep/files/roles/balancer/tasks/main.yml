@@ -1,0 +1,35 @@
+---
+- name: Install haproxy
+  ansible.builtin.dnf:
+    name: haproxy
+    state: present
+
+- name: Configure haproxy for the {{ balancer_backend_group }} group
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+    validate: haproxy -c -f %s
+  notify: Restart haproxy
+
+- name: Start and enable haproxy
+  ansible.builtin.service:
+    name: haproxy
+    state: started
+    enabled: true
+
+- name: Check firewalld state
+  ansible.builtin.command: firewall-cmd --state
+  register: balancer_fw
+  changed_when: false
+  failed_when: false
+
+- name: Open http in firewalld (permanent + runtime)
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --query-service=http && firewall-cmd --query-service=http && exit 0
+    firewall-cmd --permanent --add-service=http && firewall-cmd --reload && echo changed
+  register: balancer_fw_open
+  changed_when: "'changed' in balancer_fw_open.stdout"
+  when: balancer_fw.rc == 0

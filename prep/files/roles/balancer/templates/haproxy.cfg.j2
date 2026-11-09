@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+global
+    log         127.0.0.1 local2
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     4000
+    user        haproxy
+    group       haproxy
+    daemon
+
+defaults
+    mode                    http
+    log                     global
+    option                  httplog
+    option                  dontlognull
+    option                  http-server-close
+    timeout connect         5s
+    timeout client          30s
+    timeout server          30s
+
+frontend main
+    bind *:{{ balancer_port }}
+    default_backend app
+
+backend app
+    balance roundrobin
+{% for host in groups[balancer_backend_group] | default([]) %}
+    server web{{ loop.index }} {{ host }}:80 check
+{% endfor %}
