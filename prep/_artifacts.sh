@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Pembuat artefak yang disajikan materials server (http://materials, http://content).
 
-# Soal 4/5: role balancer & phpinfo -> http://content/Rhce/<role>.tgz
+# Soal 4/5: role balancer & phpinfo -> $CONTENT_URL/<role>.tgz
 pub_roles() {
   local r tmp; tmp="$(mktemp -d)"
   for r in balancer phpinfo; do
@@ -11,16 +11,16 @@ pub_roles() {
   rm -rf "$tmp"
 }
 
-# Soal 11/13/16/17/21: file pendukung
+# Soal 11/13/16/17/21: file pendukung (semua di $CONTENT_URL)
 pub_materials() {
   local tmp; tmp="$(mktemp -d)"
-  publish "$FILES_DIR/materials/hwreport.empty" hwreport.empty
-  publish "$FILES_DIR/materials/hosts.j2"       hosts.j2
-  publish "$FILES_DIR/materials/hosts.yml"      hosts.yml
+  publish "$FILES_DIR/materials/hwreport.empty" Rhce/hwreport.empty
+  publish "$FILES_DIR/materials/hosts.j2"       Rhce/hosts.j2
+  publish "$FILES_DIR/materials/hosts.yml"      Rhce/hosts.yml
   publish "$FILES_DIR/materials/user_list.yml"  Rhce/user_list.yml
   python3 -I "$FILES_DIR/vault.py" encrypt "$SAL_OLD_PW" "$FILES_DIR/materials/salaries.plain" "$tmp/salaries.yml" \
     || die "Gagal membuat salaries.yml (butuh python3-cryptography)"
-  publish "$tmp/salaries.yml" salaries.yml
+  publish "$tmp/salaries.yml" Rhce/salaries.yml
   tar czf "$tmp/ex294-docs.tar.gz" --owner=0 --group=0 -C "$FILES_DIR/materials" docs
   publish "$tmp/ex294-docs.tar.gz" Rhce/ex294-docs.tar.gz
   rm -rf "$tmp"
@@ -101,13 +101,14 @@ write_lab_info() {
   info_note README-lab.txt <<EOF
 EX294 practice lab — info dari prep (dibuat $(date '+%F %T'))
 
+Profil lab   : $LAB_PROFILE
 Control node : $CONTROL_IP   (user $STUDENT, folder kerja $WORKDIR)
 dev          : $DEV_HOSTS
 test         : $TEST_HOSTS
 prod         : $PROD_HOSTS
 balancers    : $BAL_HOSTS
 
-Materials    : http://materials/  dan  http://content/Rhce/   (disajikan dari control node)
+Resource soal: $CONTENT_URL/   (disajikan dari control node, $MAT_ROOT/Rhce)
 System roles : ${SR_FQCN:-belum disiapkan}   -> role timesync = ${SR_FQCN:-redhat.rhel_system_roles}.timesync
 Repo (Soal 2): ${REPO_PREFIX_USED:-jalankan prep-q02.sh}
 EOF

@@ -10,8 +10,9 @@ if [ -z "$prefix" ] && [ -n "$RHEL_ISO" ]; then
   [ -f "$RHEL_ISO" ] || die "RHEL_ISO=$RHEL_ISO tidak ditemukan"
   mkdir -p "$MAT_ROOT/rhel9"
   mountpoint -q "$MAT_ROOT/rhel9" || mount -o loop,ro "$RHEL_ISO" "$MAT_ROOT/rhel9" || die "Gagal mount ISO"
-  grep -q "$MAT_ROOT/rhel9" /etc/fstab || echo "$RHEL_ISO $MAT_ROOT/rhel9 iso9660 loop,ro,nofail 0 0" >> /etc/fstab
-  prefix="http://materials/rhel9"
+  grep -q "$MAT_ROOT/rhel9" /etc/fstab || echo "$RHEL_ISO $MAT_ROOT/rhel9 iso9660 loop,ro,nofail 0 0 # ex294-prep" >> /etc/fstab
+  restorecon -R "$MAT_ROOT/rhel9" 2>/dev/null || true
+  prefix="http://content.example.com/rhel9"
 fi
 if [ -z "$prefix" ]; then
   first="${ALL_HOSTS%% *}"

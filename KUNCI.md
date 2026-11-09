@@ -1,7 +1,7 @@
 # KUNCI JAWABAN — EX294 Practice (RHEL 9)
 
-> Semua perintah dijalankan di control node sebagai `greg` dari `/home/greg/ansible` (kecuali disebut lain).
-> IP/URL di bawah memakai nilai default. Nilai lab Anda ada di `/home/greg/ex294/README-lab.txt` dan `q02-repo.txt`.
+> Semua perintah dijalankan di control node sebagai `student` dari `/home/student/ansible` (kecuali disebut lain).
+> Host/URL di bawah memakai topologi self-lab (servera–serverd, `content.example.com`). Ringkasan nilai lab ada di `/home/student/ex294/README-lab.txt`.
 > Kalau lupa nama parameter modul: `ansible-doc <modul>` atau `ansible-navigator doc <modul> -m stdout`. Keduanya boleh dipakai di ujian.
 
 ## Koreksi dari dump `rhce_v1.5.pdf`
@@ -10,9 +10,9 @@ Dump-nya berguna untuk pola soal, tapi beberapa jawabannya **salah** dan bakal b
 
 | Soal | Di dump | Yang benar |
 |---|---|---|
-| 1 | `ansible_password=root` di inventory | Tidak perlu. SSH key sudah terpasang; password di inventory malah butuh `sshpass`. Cukup `remote_user=root` di `ansible.cfg` |
+| 1 | `ansible_password=root` di inventory | Tidak perlu. SSH key sudah terpasang; password di inventory malah butuh `sshpass`. Atur `remote_user` (+ `become` bila bukan root) di `ansible.cfg` |
 | 2B | `hosts: app` | Grup `app` tidak ada → `hosts: all` |
-| 4 | `-r /home/admin/ansible/...` | Typo, harusnya `/home/greg/ansible/roles/requirements.yml` |
+| 4 | `-r /home/admin/ansible/...` | Typo, harusnya `/home/student/ansible/roles/requirements.yml` |
 | 8 | Memakai role `...timesync` untuk SELinux | Role yang benar `redhat.rhel_system_roles.selinux` |
 | 7/8 | `redhat-rhel_system_roles.timesync` | Nama FQCN memakai titik: `redhat.rhel_system_roles.timesync` |
 | 9 | `Hosts:` / `Tasks:` huruf besar | Keyword YAML Ansible huruf kecil semua (`hosts`, `tasks`), kalau tidak playbook error |
@@ -29,11 +29,11 @@ Dump-nya berguna untuk pola soal, tapi beberapa jawabannya **salah** dan bakal b
 ## Persiapan awal ujian
 
 ```bash
-ssh greg@workstation                         # di lab: ssh greg@172.25.250.254
-podman login utility.lab.example.com         # user/password dari bagian Important information
+ssh student@workstation.lab.example.com      # self-lab   (ujian asli: ssh greg@workstation)
+podman login utility.lab.example.com         # hanya di ujian asli, user/password dari Important information
 ```
 
-`ansible-navigator` memakai execution environment (EE) dari registry itu. Di lab latihan **tanpa** registry, tambahkan `--ee false`:
+`ansible-navigator` memakai execution environment (EE) dari registry itu. Di self-lab **tanpa** registry, tambahkan `--ee false`:
 `ansible-navigator run -m stdout --ee false <playbook>`. Atau pakai `ansible-playbook <playbook>`, hasilnya sama.
 
 ---
@@ -42,25 +42,24 @@ podman login utility.lab.example.com         # user/password dari bagian Importa
 
 ```bash
 sudo dnf install -y ansible-core ansible-navigator
-# lab tanpa repo AAP: pip3 install --user ansible-navigator
-mkdir -p /home/greg/ansible && cd /home/greg/ansible
+# self-lab tanpa repo AAP: pip3 install --user ansible-navigator  (lalu PATH=$HOME/.local/bin:$PATH)
+mkdir -p /home/student/ansible && cd /home/student/ansible
 ```
 
 `inventory`:
 
 ```ini
 [dev]
-172.25.250.9
+servera.lab.example.com
 
 [test]
-172.25.250.10
+serverb.lab.example.com
 
 [prod]
-172.25.250.11
-172.25.250.12
+serverc.lab.example.com
 
 [balancers]
-172.25.250.13
+serverd.lab.example.com
 
 [webservers:children]
 prod
@@ -70,27 +69,33 @@ prod
 
 ```ini
 [defaults]
-inventory = /home/greg/ansible/inventory
-roles_path = /home/greg/ansible/roles
-collections_path = /home/greg/ansible/mycollections
-remote_user = root
+inventory = /home/student/ansible/inventory
+roles_path = /home/student/ansible/roles
+collections_path = /home/student/ansible/mycollections
+remote_user = student
 host_key_checking = False
+
+[privilege_escalation]
+become = True
+become_method = sudo
+become_user = root
+become_ask_pass = False
 ```
 
-> Variasi soal yang meminta user `greg` + privilege escalation: ganti `remote_user = greg` lalu tambahkan
-> `[privilege_escalation]` dengan `become = True`, `become_method = sudo`, `become_user = root`, `become_ask_pass = False`.
+> Versi dump (ujian dengan key root): `remote_user = root` dan bagian `[privilege_escalation]` tidak perlu. Nama grup di ujian `balancers`; dokumen self-lab sempat memakai `balancer` — grader menerima keduanya, asal playbook Anda konsisten dengan inventory.
 
 Verifikasi:
 
 ```bash
-ansible --version                 # "config file = /home/greg/ansible/ansible.cfg"
-ansible-inventory --graph         # webservers -> prod -> .11 .12
+ansible --version                 # "config file = /home/student/ansible/ansible.cfg"
+ansible-inventory --graph         # webservers -> prod -> serverc
 ansible all -m ping
+ansible all -m command -a whoami  # root
 ```
 
 ## Soal 2 — Repository
 
-`yum_repo.yml` (ganti prefix dengan isi `~/ex294/q02-repo.txt`):
+`yum_repo.yml` (nilai self-lab; ujian asli memakai URL dari soal):
 
 ```yaml
 ---
@@ -101,18 +106,18 @@ ansible all -m ping
       ansible.builtin.yum_repository:
         name: EX294_BASE
         description: EX294 base software
-        baseurl: http://content.example.com/rhel9.3/x86_64/dvd/BaseOS
+        baseurl: http://content.example.com/rhel9.0/x86_64/dvd/BaseOS
         gpgcheck: true
-        gpgkey: http://content.example.com/rhel9.3/x86_64/dvd/RPM-GPG-KEY-redhat-release
+        gpgkey: http://content.example.com/rhel9.0/x86_64/dvd/RPM-GPG-KEY-redhat-release
         enabled: true
 
     - name: EX294_STREAM
       ansible.builtin.yum_repository:
         name: EX294_STREAM
         description: EX294 stream software
-        baseurl: http://content.example.com/rhel9.3/x86_64/dvd/AppStream
+        baseurl: http://content.example.com/rhel9.0/x86_64/dvd/AppStream
         gpgcheck: true
-        gpgkey: http://content.example.com/rhel9.3/x86_64/dvd/RPM-GPG-KEY-redhat-release
+        gpgkey: http://content.example.com/rhel9.0/x86_64/dvd/RPM-GPG-KEY-redhat-release
         enabled: true
 ```
 
@@ -125,7 +130,7 @@ Variasi lama, `adhoc.sh` (jangan lupa `chmod +x adhoc.sh` lalu jalankan `./adhoc
 
 ```bash
 #!/bin/bash
-P=http://content.example.com/rhel9.3/x86_64/dvd
+P=http://content.example.com/rhel9.0/x86_64/dvd
 ansible all -m ansible.builtin.yum_repository -a "name=EX294_BASE description='EX294 base software' baseurl=$P/BaseOS gpgcheck=yes gpgkey=$P/RPM-GPG-KEY-redhat-release enabled=yes"
 ansible all -m ansible.builtin.yum_repository -a "name=EX294_STREAM description='EX294 stream software' baseurl=$P/AppStream gpgcheck=yes gpgkey=$P/RPM-GPG-KEY-redhat-release enabled=yes"
 ```
@@ -133,10 +138,10 @@ ansible all -m ansible.builtin.yum_repository -a "name=EX294_STREAM description=
 ## Soal 3 — Collections
 
 ```bash
-mkdir -p /home/greg/ansible/mycollections
-ansible-galaxy collection install http://content/Rhce/ansible-posix.tar.gz     -p /home/greg/ansible/mycollections
-ansible-galaxy collection install http://content/Rhce/rhel_system_roles.tar.gz -p /home/greg/ansible/mycollections
-ansible-galaxy collection install http://content/Rhce/community-general.tar.gz -p /home/greg/ansible/mycollections
+mkdir -p /home/student/ansible/mycollections
+ansible-galaxy collection install http://content.example.com/Rhce/ansible-posix.tar.gz     -p /home/student/ansible/mycollections
+ansible-galaxy collection install http://content.example.com/Rhce/rhel_system_roles.tar.gz -p /home/student/ansible/mycollections
+ansible-galaxy collection install http://content.example.com/Rhce/community-general.tar.gz -p /home/student/ansible/mycollections
 ansible-galaxy collection list
 ```
 
@@ -148,14 +153,14 @@ Warning "path is not part of the configured Ansible collections paths" tidak mun
 
 ```yaml
 ---
-- src: http://content/Rhce/balancer.tgz
+- src: http://content.example.com/Rhce/balancer.tgz
   name: balancer
-- src: http://content/Rhce/phpinfo.tgz
+- src: http://content.example.com/Rhce/phpinfo.tgz
   name: phpinfo
 ```
 
 ```bash
-ansible-galaxy role install -r /home/greg/ansible/roles/requirements.yml -p /home/greg/ansible/roles
+ansible-galaxy role install -r /home/student/ansible/roles/requirements.yml -p /home/student/ansible/roles
 ansible-galaxy role list
 ```
 
@@ -178,14 +183,14 @@ ansible-galaxy role list
 
 ```bash
 ansible-navigator run -m stdout roles.yml
-curl http://172.25.250.11/hello.php | head -1
-curl http://172.25.250.13/ ; curl http://172.25.250.13/     # dua backend bergantian
+curl http://serverc.lab.example.com/hello.php | head -1
+curl http://serverd.lab.example.com/      # Welcome to serverc.lab.example.com on 10.10.101.94
 ```
 
 ## Soal 6 — Role apache
 
 ```bash
-cd /home/greg/ansible/roles && ansible-galaxy role init apache && cd ..
+cd /home/student/ansible/roles && ansible-galaxy role init apache && cd ..
 ```
 
 `roles/apache/tasks/main.yml`:
@@ -241,7 +246,7 @@ Welcome to {{ ansible_facts['fqdn'] }} on {{ ansible_facts['default_ipv4']['addr
 
 ```bash
 ansible-navigator run -m stdout httpd.yml
-curl http://172.25.250.9/
+curl http://servera.lab.example.com/
 ```
 
 ## Soal 7 — timesync system role
@@ -377,7 +382,7 @@ Kalau node sebelumnya `disabled`, role akan minta reboot (`selinux_reboot_requir
 ```
 
 ```bash
-curl http://172.25.250.9/webdev/          # Development
+curl http://servera.lab.example.com/webdev/          # Development
 ```
 
 Mode `2775` = setgid (2) + rwx/rwx/r-x. Cek: `ansible dev -m command -a 'ls -ldZ /webdev /webdev/index.html'`.
@@ -393,7 +398,7 @@ Mode `2775` = setgid (2) + rwx/rwx/r-x. Cek: `ansible dev -m command -a 'ls -ldZ
   tasks:
     - name: Download template
       ansible.builtin.get_url:
-        url: http://materials/hwreport.empty
+        url: http://content.example.com/Rhce/hwreport.empty
         dest: /root/hwreport.txt
         force: true
 
@@ -451,8 +456,8 @@ ansible all -m command -a 'cat /root/hwreport.txt'
 ## Soal 13 — hosts.j2
 
 ```bash
-cd /home/greg/ansible
-wget http://materials/hosts.j2 http://materials/hosts.yml     # atau curl -O
+cd /home/student/ansible
+wget http://content.example.com/Rhce/hosts.j2 http://content.example.com/Rhce/hosts.yml     # atau curl -O
 ```
 
 Tambahkan di bawah dua baris `localhost` pada `hosts.j2`:
@@ -512,7 +517,7 @@ ansible-vault view --vault-password-file=secret.txt locker.yml
 ## Soal 16 — Rekey
 
 ```bash
-wget http://materials/salaries.yml
+wget http://content.example.com/Rhce/salaries.yml
 ansible-vault rekey --ask-vault-pass salaries.yml
 #   Vault password:          insecure8sure
 #   New Vault password:      bbs2you9527
@@ -523,7 +528,7 @@ ansible-vault view salaries.yml        # password baru
 ## Soal 17 — User
 
 ```bash
-wget http://content/Rhce/user_list.yml
+wget http://content.example.com/Rhce/user_list.yml
 ```
 
 `create_users.yml`:
@@ -577,7 +582,7 @@ ansible dev,test -m command -a 'id bob'
 ansible prod -m command -a 'chage -l sally'
 ```
 
-> Kalau memakai EE dan file vault password tidak terbaca di container, jalankan dengan `ansible-playbook create_users.yml --vault-password-file=secret.txt`, atau tambahkan `vault_password_file = /home/greg/ansible/secret.txt` di `ansible.cfg`.
+> Kalau memakai EE dan file vault password tidak terbaca di container, jalankan dengan `ansible-playbook create_users.yml --vault-password-file=secret.txt`, atau tambahkan `vault_password_file = /home/student/ansible/secret.txt` di `ansible.cfg`.
 
 ## Soal 18 — LVM
 
@@ -676,7 +681,7 @@ ansible all -m command -a 'blkid /dev/research/data'
 
 ## Soal 20 (bonus) — ansible-navigator.yml & Git
 
-`/home/greg/ansible/ansible-navigator.yml`:
+`/home/student/ansible/ansible-navigator.yml`:
 
 ```yaml
 ---
@@ -691,10 +696,10 @@ ansible-navigator:
 ```
 
 ```bash
-git clone /srv/git/ex294-playbooks.git /home/greg/ex294-playbooks
-cd /home/greg/ex294-playbooks
-git config user.name greg; git config user.email greg@lab.example.com
-cp /home/greg/ansible/issue.yml /home/greg/ansible/webcontent.yml .
+git clone /srv/git/ex294-playbooks.git /home/student/ex294-playbooks
+cd /home/student/ex294-playbooks
+git config user.name student; git config user.email student@lab.example.com
+cp /home/student/ansible/issue.yml /home/student/ansible/webcontent.yml .
 git add issue.yml webcontent.yml
 git commit -m "Add RHCE playbooks"
 git push origin main
@@ -728,7 +733,7 @@ git push origin main
 
     - name: Extract bundle
       ansible.builtin.unarchive:
-        src: http://content/Rhce/ex294-docs.tar.gz
+        src: http://content.example.com/Rhce/ex294-docs.tar.gz
         dest: /srv/docs
         remote_src: true
 ```

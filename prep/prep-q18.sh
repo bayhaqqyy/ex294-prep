@@ -4,6 +4,7 @@ source "$(dirname "$(readlink -f "$0")")/_lib.sh"
 need_root "$@"
 need_setup
 # Soal 18 — VG research dari file loop: besar (2 GiB) / kecil (1 GiB) / tidak ada.
+# VG research yang sudah ada di disk asli (mis. /dev/vdb, dibuat manual) dipertahankan; hanya LV data yang dihapus.
 setup_vg() { # host size_mb(0 = tanpa VG)
   { size="$2"; rvars size; cat <<'EOS'
 set -e
@@ -12,6 +13,13 @@ for m in $(findmnt -rn -o TARGET -S /dev/research/data 2>/dev/null); do umount "
 sed -i '\#/dev/research/data#d;\#/dev/mapper/research-data#d' /etc/fstab
 if vgs research >/dev/null 2>&1; then
   pvs="$(pvs --noheadings -o pv_name -S vg_name=research | xargs)"
+  case "$pvs" in
+    *loop*) ;;
+    *) # VG research di disk asli (dibuat manual sesuai dokumen self-lab): hanya reset LV data
+       lvremove -f research/data >/dev/null 2>&1 || true
+       echo "  $(hostname): VG research di $pvs dipertahankan ($(vgs --noheadings --units m -o vg_size research | xargs)), LV data dihapus"
+       exit 0 ;;
+  esac
   vgremove -f research >/dev/null
   for p in $pvs; do pvremove -ff -y "$p" >/dev/null 2>&1 || true; done
 fi

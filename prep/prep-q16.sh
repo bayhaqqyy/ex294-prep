@@ -7,4 +7,4 @@ need_setup
 source "$LIB_DIR/_artifacts.sh"
 pub_materials
 rm -f "$WORKDIR/salaries.yml"
-log "Soal 16 siap: http://materials/salaries.yml"
+log "Soal 16 siap: $CONTENT_URL/salaries.yml"

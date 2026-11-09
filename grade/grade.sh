@@ -64,7 +64,8 @@ def hosts(g):
     out=set(d.get(g,{}).get('hosts',[]))
     for c in d.get(g,{}).get('children',[]): out|=hosts(c)
     return out
-exp={'dev':'$DEV_HOSTS','test':'$TEST_HOSTS','prod':'$PROD_HOSTS','balancers':'$BAL_HOSTS','webservers':'$PROD_HOSTS'}
+bal='balancers' if 'balancers' in d else 'balancer'   # dokumen self-lab memakai nama 'balancer'
+exp={'dev':'$DEV_HOSTS','test':'$TEST_HOSTS','prod':'$PROD_HOSTS',bal:'$BAL_HOSTS','webservers':'$PROD_HOSTS'}
 ok=all(hosts(g)==set(v.split()) for g,v in exp.items()) and 'prod' in d.get('webservers',{}).get('children',[])
 sys.exit(0 if ok else 1)"
 }
@@ -77,6 +78,10 @@ q1_ping() {
 }
 q1_files()   { sfile inventory && sfile ansible.cfg; }
 q1_cfgfile() { as_student "ansible --version" 2>/dev/null | grep -q "config file = $W/ansible.cfg"; }
+q1_become() {
+  local n; n="$(as_student "ansible all -m command -a whoami -o" 2>/dev/null | grep -c '(stdout) root$')"
+  [ "$n" -eq "$(wc -w <<<"$ALL_HOSTS")" ]
+}
 q1() {
   begin 1 "Install & konfigurasi Ansible"
   chk 3 "ansible-core terpasang"                         rpm -q ansible-core
@@ -87,7 +92,8 @@ q1() {
   chk 2 "inventory = $W/inventory"                       q1_cfg DEFAULT_HOST_LIST "$W/inventory"
   chk 1 "roles_path = $W/roles"                          q1_cfg DEFAULT_ROLES_PATH "$W/roles"
   chk 1 "collections_path = $W/mycollections"            q1_cfg 'COLLECTIONS_PATHS?' "$W/mycollections"
-  chk 2 "ansible all -m ping sukses ke semua node"       q1_ping
+  chk 1 "ansible all -m ping sukses ke semua node"       q1_ping
+  chk 1 "Privilege escalation: whoami = root di semua node" q1_become
   end_core
 }
 
@@ -136,7 +142,7 @@ q4() {
   begin 4 "Role dari requirements.yml"
   chk 2 "roles/requirements.yml ada"                     test -f "$W/roles/requirements.yml"
   chk 3 "requirements.yml: balancer & phpinfo dari URL"  pyf "$W/roles/requirements.yml" -- \
-    "sorted((r.get('name'),r.get('src')) for r in d)==[('balancer','http://content/Rhce/balancer.tgz'),('phpinfo','http://content/Rhce/phpinfo.tgz')]"
+    "sorted((r.get('name'),r.get('src').replace('/rhce/','/Rhce/')) for r in d)==[('balancer','$CONTENT_URL/balancer.tgz'),('phpinfo','$CONTENT_URL/phpinfo.tgz')]"
   chk 5 "Role balancer terpasang di roles/"              test -f "$W/roles/balancer/tasks/main.yml"
   chk 5 "Role phpinfo terpasang di roles/"               test -f "$W/roles/phpinfo/tasks/main.yml"
   end_core
@@ -366,19 +372,46 @@ q17() {
 }
 
 # ===================================================================== Soal 18
-lv_is() { # lv_is <hosts> <size_mb>
-  [ -n "${1// /}" ] || return 0
-  all_ok "$1" "[ \"\$(lvs --noheadings --units m --nosuffix -o lv_size research/data 2>/dev/null | xargs | cut -d. -f1)\" = '$2' ] && [ \"\$(blkid -s TYPE -o value /dev/research/data)\" = ext4 ]"
+# Status per host: "NOVG" atau "<ukuran VG MiB> <ukuran LV data MiB|none> <fstype|none>"
+declare -A LVS
+lv_state() {
+  local h; for h in $ALL_HOSTS; do
+    [ -n "${LVS[$h]:-}" ] && continue
+    LVS[$h]="$(rrun "$h" '
+      vgs research >/dev/null 2>&1 || { echo NOVG; exit 0; }
+      vg=$(vgs --noheadings --units m --nosuffix -o vg_size research | xargs | cut -d. -f1)
+      lv=$(lvs --noheadings --units m --nosuffix -o lv_size research/data 2>/dev/null | xargs | cut -d. -f1)
+      fs=$(blkid -s TYPE -o value /dev/research/data 2>/dev/null)
+      echo "$vg ${lv:-none} ${fs:-none}"' 2>/dev/null)"
+  done
 }
-q18_rest() { all_ok "$ALL_HOSTS" '! findmnt -S /dev/research/data && ! grep -q research /etc/fstab' && none_ok "$1" 'vgs research'; }
+# lv_class big|small -> semua host dengan VG kelas itu punya LV ukuran benar + ext4
+lv_class() {
+  local h vg lv fs want n=0; lv_state
+  for h in $ALL_HOSTS; do
+    read -r vg lv fs <<<"${LVS[$h]}"
+    [ "$vg" = NOVG ] || [ -z "$vg" ] && continue
+    if [ "$vg" -ge 1504 ]; then [ "$1" = big ] || continue; want=1500; else [ "$1" = small ] || continue; want=800; fi
+    n=$((n + 1))
+    [ "$lv" = "$want" ] && [ "$fs" = ext4 ] || return 1
+  done
+  [ $n -gt 0 ]    # tidak ada node dengan VG kelas ini = prep-q18.sh belum dijalankan
+}
+q18_rest() {
+  local h; lv_state
+  for h in $ALL_HOSTS; do [ -n "${LVS[$h]}" ] || return 1; done
+  all_ok "$ALL_HOSTS" '! findmnt -S /dev/research/data && ! grep -q "research" /etc/fstab'
+}
 q18() {
   begin 18 "LVM research/data"
-  local none=""; for h in $ALL_HOSTS; do in_list "$h" "$RESEARCH_BIG_HOSTS $RESEARCH_SMALL_HOSTS" || none="$none $h"; done
+  lv_state
+  for h in $ALL_HOSTS; do printf "  %-28s %s\n" "$h" "${LVS[$h]:-tidak terjangkau}"; done
+  grep -qv NOVG <<<"$(printf '%s\n' "${LVS[@]}")" || printf "  ${Y}Belum ada VG research di node mana pun — jalankan prep-q18.sh dulu${N}\n"
   chk 2 "lvm.yml ada"                                    test -f "$W/lvm.yml"
   chk 3 "Pesan 'vg not found' & 'Insufficient size of vg'" bash -c "grep -q 'vg not found' '$W/lvm.yml' && grep -q 'Insufficient size of vg' '$W/lvm.yml'"
-  chk 6 "VG besar: LV data 1500M ext4"                   lv_is "$RESEARCH_BIG_HOSTS" 1500
-  chk 6 "VG kecil: LV data 800M ext4"                    lv_is "$RESEARCH_SMALL_HOSTS" 800
-  chk 3 "Tidak di-mount; host tanpa VG tidak diubah"     q18_rest "$none"
+  chk 6 "VG >= 1500M: LV data 1500M ext4"                lv_class big
+  chk 6 "VG < 1500M: LV data 800M ext4"                  lv_class small
+  chk 3 "LV tidak di-mount / tidak di fstab"             q18_rest
   end_core
 }
 

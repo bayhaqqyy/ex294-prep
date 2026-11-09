@@ -15,6 +15,11 @@ need_root() {
   exec sudo -E bash "$(readlink -f "$0")" "$@"
 }
 
+# Key otomatis: kalau masuk sebagai user biasa (student), pakai key milik user itu.
+if [ -z "$SSH_KEY" ] && [ "$SSH_USER" != root ]; then
+  _home="$(getent passwd "$SSH_USER" | cut -d: -f6)"
+  for _k in id_ed25519 id_rsa id_ecdsa; do [ -r "$_home/.ssh/$_k" ] && { SSH_KEY="$_home/.ssh/$_k"; break; }; done
+fi
 SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
           -o LogLevel=ERROR -o ConnectTimeout=8)
 [ -n "$SSH_KEY" ] && SSH_OPTS+=(-i "$SSH_KEY")
@@ -48,7 +53,7 @@ check_ssh() {
   for h in $ALL_HOSTS; do
     rrun "$h" true >/dev/null 2>&1 || { warn "Tidak bisa SSH ke $SSH_USER@$h tanpa password"; bad=1; }
   done
-  [ $bad -eq 0 ] || die "Pastikan root di control node bisa 'ssh $SSH_USER@<node>' tanpa password (ssh-copy-id), atau atur SSH_USER/SSH_KEY di env.sh"
+  [ $bad -eq 0 ] || die "Pastikan '$SSH_USER' bisa ssh ke semua node tanpa password${SSH_KEY:+ (key: $SSH_KEY)} dan punya sudo NOPASSWD. Atur SSH_USER/SSH_KEY di env.sh bila perlu"
 }
 
 as_student() { runuser -l "$STUDENT" -c "cd $WORKDIR && $*"; }

@@ -12,4 +12,4 @@ for g in devops opsmgr; do getent group "$g" >/dev/null && groupdel "$g" >/dev/n
 true
 EOS
 } | on_hosts "$ALL_HOSTS"
-log "Soal 17 siap: http://content/Rhce/user_list.yml (butuh locker.yml dari Soal 15)"
+log "Soal 17 siap: $CONTENT_URL/user_list.yml (butuh locker.yml dari Soal 15)"

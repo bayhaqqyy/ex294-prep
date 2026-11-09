@@ -1,38 +1,48 @@
 # shellcheck shell=bash
 # =====================================================================
-# Konfigurasi lab EX294. Semua nilai bisa di-override lewat environment:
-#   DEV_HOSTS="10.0.0.11" ./prep/prep-q06.sh
-# Default mengikuti dump ujian (control node 172.25.250.254).
+# Konfigurasi lab EX294. Nilai diambil dari profil, lalu default di bawah.
+#   LAB_PROFILE=selflab (default) -> prep/profiles/selflab.env  (VM pribadi, servera..serverd)
+#   LAB_PROFILE=exam              -> prep/profiles/exam.env     (topologi dump, IP 172.25.250.x)
+# Semua nilai bisa di-override lewat environment:
+#   sudo DEV_HOSTS=servera.lab.example.com ./prep/prep-q06.sh
 # =====================================================================
+: "${LAB_PROFILE:=selflab}"
+_profile="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/profiles/$LAB_PROFILE.env"
+# shellcheck source=profiles/selflab.env
+[ -f "$_profile" ] && source "$_profile"
 
 # --- Node -------------------------------------------------------------
-: "${CONTROL_IP:=172.25.250.254}"            # IP control node (tempat script ini jalan)
-: "${DEV_HOSTS:=172.25.250.9}"
-: "${TEST_HOSTS:=172.25.250.10}"
-: "${PROD_HOSTS:=172.25.250.11 172.25.250.12}"
-: "${BAL_HOSTS:=172.25.250.13}"
+: "${CONTROL_IP:=10.10.101.91}"              # IP control node (tempat script ini jalan)
+: "${DEV_HOSTS:=servera.lab.example.com}"    # pakai nama yang sama dengan inventory jawaban
+: "${TEST_HOSTS:=serverb.lab.example.com}"
+: "${PROD_HOSTS:=serverc.lab.example.com}"
+: "${BAL_HOSTS:=serverd.lab.example.com}"
 
-# Cara script prep/grade masuk ke managed node.
-# root + SSH key (seperti ujian). Kalau lab Anda hanya punya key untuk user lain
-# (mis. student di classroom RH294), isi SSH_USER=student; script akan pakai sudo -n.
-: "${SSH_USER:=root}"
-: "${SSH_KEY:=}"                              # kosong = key default ~/.ssh milik root
+# Cara script prep/grade masuk ke managed node (sebagai root lewat sudo bila SSH_USER bukan root).
+: "${SSH_USER:=student}"
+: "${SSH_KEY:=}"                              # kosong = otomatis: key milik SSH_USER (id_ed25519/id_rsa/id_ecdsa)
+: "${KEY_TO_ROOT:=no}"                        # yes = setup-lab juga memasang key ke root@node (gaya dump)
 
 # --- User latihan --------------------------------------------------------
-: "${STUDENT:=greg}"
-: "${STUDENT_PW:=redhat}"
+: "${STUDENT:=student}"
+: "${STUDENT_PW:=redhat}"                     # hanya dipakai bila user belum ada
 : "${WORKDIR:=/home/$STUDENT/ansible}"        # folder kerja jawaban
 : "${INFODIR:=/home/$STUDENT/ex294}"          # info dari prep (URL repo, FQCN system roles, dll.)
 
-# --- Materials server (pengganti http://materials dan http://content di ujian) ---
-: "${MAT_ROOT:=/srv/ex294-materials}"
-: "${MAT_NAMES:=materials content}"           # alias /etc/hosts -> CONTROL_IP
+# --- Content server ----------------------------------------------------------
+# httpd  : pakai Apache di control node, docroot MAT_ROOT (/var/www/html)
+# python : python3 -m http.server di port 80 (ex294-materials.service)
+: "${MAT_SERVER:=httpd}"
+: "${MAT_ROOT:=/var/www/html}"
+: "${MAT_NAMES:=content.example.com content materials}"   # alias /etc/hosts -> CONTROL_IP (bila belum resolve)
 : "${MAT_PORT:=80}"
+CONTENT_URL="http://content.example.com/Rhce"            # semua resource soal ada di sini
 
 # --- Repo (Soal 2) -------------------------------------------------------
 # Kosong = deteksi otomatis dari repo BaseOS yang sudah ada di managed node pertama.
-# Contoh classroom: http://content.example.com/rhel9.3/x86_64/dvd
 : "${REPO_PREFIX:=}"
+: "${REPO_DVD_DEV:=}"                         # mis. /dev/sr0 -> di-mount ke REPO_DVD_DIR oleh setup-lab
+: "${REPO_DVD_DIR:=}"
 : "${RHEL_ISO:=}"                             # alternatif: path ISO RHEL 9 di control node
 
 # --- Nilai soal -----------------------------------------------------------
@@ -47,9 +57,10 @@
 : "${GIT_CLONE:=/home/$STUDENT/ex294-playbooks}"
 
 # --- Storage (Soal 18 & 19) ----------------------------------------------
-# Soal 18: VG "research" dibuat dari file loop (aman, tidak menyentuh disk asli).
-: "${RESEARCH_BIG_HOSTS:=$DEV_HOSTS $TEST_HOSTS}"   # VG 2 GiB  -> LV 1500M muat
-: "${RESEARCH_SMALL_HOSTS:=$PROD_HOSTS}"            # VG 1 GiB  -> fallback 800M
+# Soal 18: VG "research" dari file loop (aman, tidak menyentuh disk asli).
+# Kalau di node sudah ada VG research di disk asli (dibuat manual), prep tidak mengubahnya.
+: "${RESEARCH_BIG_HOSTS:=$DEV_HOSTS $PROD_HOSTS}"   # VG 2 GiB -> LV 1500M muat
+: "${RESEARCH_SMALL_HOSTS:=$TEST_HOSTS}"            # VG 1 GiB -> fallback 800M
 # Host lain (balancers) sengaja tanpa VG -> harus muncul "vg not found".
 # Soal 19: disk kosong di balancers. Kalau tidak ada, cabang "Disk does not exist" yang diuji.
 : "${PART_DISK:=vdd}"

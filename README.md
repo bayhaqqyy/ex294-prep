@@ -32,49 +32,78 @@ Set latihan untuk ujian **EX294**. Pola soalnya diambil dari dump *RHCE EXAM V9*
 
 Di ujian asli hanya muncul **salah satu** dari Soal 7/8 dan **salah satu** dari Soal 18/19, sesuai catatan di dump. Karena itu 8 dan 19 dijadikan bonus.
 
+## Topologi lab (default: self-lab)
+
+Default repo ini mengikuti dokumen *Preparation Self-Lab RHCE9 EX294* (VM pribadi):
+
+| Role | Hostname | IP | Grup |
+|---|---|---|---|
+| Control node + `content.example.com` | `workstation.lab.example.com` | 10.10.101.91 | – |
+| Managed node | `servera.lab.example.com` | 10.10.101.92 | dev |
+| Managed node | `serverb.lab.example.com` | 10.10.101.93 | test |
+| Managed node | `serverc.lab.example.com` | 10.10.101.94 | prod (→ webservers) |
+| Managed node | `serverd.lab.example.com` | 10.10.101.95 | balancers |
+
+Nilainya ada di [`prep/profiles/selflab.env`](prep/profiles/selflab.env). Topologi dump (user `greg`, 5 node `172.25.250.9`–`.13`, key root) tersedia sebagai profil `exam`: `sudo LAB_PROFILE=exam ./prep/setup-lab.sh`. Nilai mana pun bisa di-override lewat environment.
+
+## Baseline yang diasumsikan sudah ada (bagian 1–13 dokumen)
+
+- 5 VM RHEL 9, IP statis, hostname, dan `/etc/hosts` konsisten di semua mesin (termasuk `content.example.com` → workstation).
+- User `student` di semua mesin dengan sudo NOPASSWD, SSH key `student@workstation` → `student@servera..serverd` tanpa password.
+- ISO RHEL 9 ter-attach ke workstation (`/dev/sr0`).
+
+`setup-lab.sh` mengecek semua itu dan **melengkapi yang kurang** tanpa mengerjakan jawaban soal:
+
+- user `student`, sudo NOPASSWD, dan SSH key ke node (hanya bila belum ada);
+- alias `content.example.com` di `/etc/hosts` (hanya bila belum resolve ke workstation);
+- httpd aktif + firewall http, `/var/www/html/Rhce` (+ symlink `rhce`);
+- DVD `/dev/sr0` di-mount ke `/var/www/html/rhel9.0/x86_64/dvd` dan dibuat persisten di `/etc/fstab` (dokumen hanya me-mount sementara);
+- resource soal di `http://content.example.com/Rhce/`: role `balancer`/`phpinfo`, tarball collections, `hwreport.empty`, `hosts.j2`, `hosts.yml`, `salaries.yml` (vault), `user_list.yml`, `ex294-docs.tar.gz`.
+
+Sesuai prinsip dokumen, repo `.repo` di managed node, user, cron, LV, dan partisi **tidak** dibuat oleh setup — itu jawaban soal.
+
+Perbedaan dengan dokumen yang perlu diperhatikan:
+
+| Dokumen self-lab | Repo ini | Alasan |
+|---|---|---|
+| `collections_path = .../collections` | `.../mycollections` | Sesuai soal di dump (Soal 1 & 3) |
+| Grup `balancer` | `balancers` | Sesuai dump; grader menerima keduanya |
+| Inventory & `ansible.cfg` dibuat di baseline | Dibuat di Soal 1 | Itu soal pertama ujian |
+| `hwreport.txt` (ada `CPU=`), `myhosts.j2`, `solaris.yml` (password `cisco`) | `hwreport.empty`, `hosts.j2`/`hosts.yml`, `salaries.yml` | Mengikuti soal di dump. File dokumen Anda di `/var/www/html/Rhce` tidak disentuh |
+
 ## Cara pakai
 
-Semua script dijalankan **di control node sebagai root** (otomatis pakai `sudo` kalau belum root). Jawaban dikerjakan sebagai `greg`.
+Semua script dijalankan **di workstation dengan sudo** (otomatis naik ke root). Jawaban dikerjakan sebagai `student` di `/home/student/ansible`.
 
 ```bash
 git clone https://github.com/bayhaqqyy/ex294-prep.git ~/ex294-prep
 cd ~/ex294-prep
-vi prep/env.sh                   # sesuaikan IP node, SSH_USER, repo
-chmod +x prep/*.sh grade/*.sh
+vi prep/profiles/selflab.env     # cek IP/hostname bila lab berubah
 
-sudo ./prep/setup-lab.sh         # sekali: user greg, SSH key, materials server, artefak
-sudo ./prep/prep-all.sh          # siapkan semua soal
-sudo ./prep/prep-all.sh 2 18     # atau beberapa soal saja
-sudo ./prep/prep-q02.sh --strict # repo lain di node dimatikan, seperti ujian
+sudo ./prep/setup-lab.sh         # sekali, lalu snapshot semua VM (EX294-BASELINE)
+sudo ./prep/prep-all.sh          # siapkan & reset semua soal
+sudo ./prep/prep-all.sh 9 18     # atau beberapa soal saja
 
-su - greg                        # kerjakan soal di /home/greg/ansible
+cd ~/ansible                     # kerjakan SOAL.md
 
-sudo ./grade/grade.sh            # nilai semua soal
-sudo ./grade/grade.sh 11 13      # nilai soal tertentu
+sudo ~/ex294-prep/grade/grade.sh          # nilai semua soal
+sudo ~/ex294-prep/grade/grade.sh 11 13    # nilai soal tertentu
 
 sudo ./prep/cleanup.sh           # reset state di node
-sudo ./prep/cleanup.sh --purge   # + hapus materials server, alias hosts, repo git
+sudo ./prep/cleanup.sh --purge   # + hapus resource buatan prep, alias hosts tambahan, repo git
 ```
 
-Opsi lain: `prep-q01.sh --full` (uninstall ansible-core & navigator), `prep-q01.sh --fresh` (pindahkan `/home/greg/ansible` lama ke `.bak-<waktu>`), `--reset` di prep 3, 4, 13, 15, 20 untuk menghapus file jawaban soal itu saja.
+Opsi lain: `prep-q01.sh --full` (uninstall ansible-core & navigator), `prep-q01.sh --fresh` (pindahkan `~/ansible` lama ke `.bak-<waktu>`), `--reset` di prep 3, 4, 13, 15, 20 untuk menghapus file jawaban soal itu saja. Info lab ditulis ke `/home/student/ex294/`.
 
-Info lab untuk peserta ditulis ke `/home/greg/ex294/` (`README-lab.txt`, `q02-repo.txt`).
+## Catatan per soal di self-lab
 
-## Asumsi lab
-
-Minimal **6 VM RHEL 9**: 1 control node + 5 managed node (dev, test, 2× prod, balancers), sesuai dump. Default IP ada di `prep/env.sh` dan bisa di-override:
-
-```bash
-DEV_HOSTS=192.168.122.11 PROD_HOSTS="192.168.122.13 192.168.122.14" sudo -E ./prep/prep-q05.sh
-```
-
-- **SSH:** root di control node harus bisa `ssh root@<node>` tanpa password. Kalau lab Anda hanya punya key untuk user lain (mis. `student` di classroom RH294), isi `SSH_USER=student` (butuh sudo NOPASSWD di node).
-- **Materials server:** `setup-lab.sh` menjalankan `python3 -m http.server` di port 80 control node (`ex294-materials.service`) dan menambahkan alias `materials` & `content` ke `/etc/hosts` semua mesin. Jadi URL soal `http://materials/...` dan `http://content/Rhce/...` bisa dipakai apa adanya. Port 80 di control node harus kosong.
-- **Collections:** urutan sumber: tarball manual di `prep/files/collections/`, lalu Galaxy (butuh internet), lalu ekstrak RPM (`rhel-system-roles`, dll.) lewat `dnf download`. Kalau `rhel-system-roles` tidak tersedia, dipakai `fedora.linux_system_roles` dari Galaxy. Nama FQCN yang dipakai lab ditulis di `README-lab.txt`. Dependencies system roles dikosongkan supaya install dari URL tetap jalan offline.
-- **Repo (Soal 2):** URL dideteksi dari repo BaseOS yang sudah ada di node pertama. Bisa juga diisi manual lewat `REPO_PREFIX`, atau pakai ISO RHEL 9 lewat `RHEL_ISO` (di-mount dan disajikan materials server).
-- **ansible-navigator:** paketnya ada di repo AAP. Tanpa subscription AAP: `pip3 install --user ansible-navigator`. Tanpa registry `utility.lab.example.com`, jalankan dengan `--ee false` atau pakai `ansible-playbook`.
-- **Soal 18:** VG `research` dibuat dari **file loop** (`/var/lib/ex294/research.img`, aktif lagi saat boot lewat `ex294-research-loop.service`): 2 GiB di dev+test (LV 1500M muat), 1 GiB di prod (fallback 800M), tidak ada di balancers (`vg not found`). Disk asli tidak disentuh.
-- **Soal 19:** butuh disk kosong `/dev/vdd` di balancers. `prep-q19.sh` hanya membersihkan disk itu kalau tidak sedang dipakai. Tanpa disk, yang diuji cabang `Disk does not exist`.
+- **Soal 2 & 9:** managed node tidak punya repo sampai Soal 2 dikerjakan, jadi Soal 9 (dan install paket lain) baru jalan setelahnya.
+- **Soal 5:** prod hanya `serverc`, jadi halaman balancer selalu menampilkan serverc (di ujian asli bergantian antara dua host).
+- **Soal 7:** `172.25.254.254` tidak ada di self-lab; yang dinilai hanya konfigurasi chrony.
+- **Soal 18:** `prep-q18.sh` membuat VG `research` dari **file loop** sesuai tabel dokumen: servera & serverc 2 GiB (LV 1500M), serverb 1 GiB (fallback 800M), serverd tanpa VG (`vg not found`). Kalau Anda sudah membuat VG `research` di disk asli (mis. `/dev/vdb`, bagian 21 dokumen), VG itu dipertahankan dan hanya LV `data` yang direset. Grader menentukan ukuran LV yang benar dari ukuran VG masing-masing node.
+- **Soal 19:** soal memakai `/dev/vdd` di serverd. Dokumen tidak membuat vdd, jadi yang teruji cabang `Disk does not exist`. Untuk cabang lain, attach disk sebagai vdd (>1.6 GiB untuk 1500MiB, ~1 GiB untuk 800MiB) lalu jalankan `prep-q19.sh`.
+- **ansible-navigator:** tanpa registry `utility.lab.example.com`, jalankan dengan `--ee false` atau pakai `ansible-playbook`.
+- **Collections:** sumbernya tarball manual di `prep/files/collections/`, lalu Galaxy (butuh internet), lalu ekstrak RPM `rhel-system-roles` lewat `dnf download`. Kalau `rhel-system-roles` tidak tersedia, dipakai `fedora.linux_system_roles`; nama yang dipakai tercatat di `README-lab.txt`.
 
 ## Urutan soal
 

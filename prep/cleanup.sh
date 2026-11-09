@@ -2,8 +2,8 @@
 # =====================================================================
 # Bersihkan sisa latihan di managed node (user, LV, haproxy, cron, repo EX294, dll.)
 #   ./cleanup.sh            -> reset state node + kembalikan repo yang dinonaktifkan --strict
-#   ./cleanup.sh --purge    -> + hapus materials server, alias /etc/hosts, sudoers greg, repo git
-# Folder kerja $WORKDIR dan user greg TIDAK dihapus.
+#   ./cleanup.sh --purge    -> + hapus resource soal buatan prep, alias /etc/hosts, sudoers tambahan, repo git
+# Folder kerja $WORKDIR, user latihan, httpd, dan DVD TIDAK dihapus.
 # =====================================================================
 set -uo pipefail
 source "$(dirname "$(readlink -f "$0")")/_lib.sh"
@@ -31,6 +31,7 @@ for u in $users; do id "$u" >/dev/null 2>&1 && userdel -r "$u" >/dev/null 2>&1; 
 for g in devops opsmgr; do getent group "$g" >/dev/null && groupdel "$g" >/dev/null 2>&1; done
 # Soal 18
 for m in $(findmnt -rn -o TARGET -S /dev/research/data 2>/dev/null); do umount "$m"; done
+lvremove -f research/data >/dev/null 2>&1
 if [ -f /var/lib/ex294/research.img ]; then
   vgremove -f research >/dev/null 2>&1
   for l in $(losetup -j /var/lib/ex294/research.img -O NAME -n 2>/dev/null); do pvremove -ff -y "$l" >/dev/null 2>&1; lvmdevices --deldev "$l" >/dev/null 2>&1; losetup -d "$l"; done
@@ -46,19 +47,27 @@ EOS
 } | on_hosts "$ALL_HOSTS"
 
 if [ "${1:-}" = "--purge" ]; then
-  log "Purge: materials server, alias /etc/hosts, sudoers, repo git"
+  log "Purge: resource soal, alias /etc/hosts, sudoers tambahan, repo git"
   { rvars STUDENT; cat <<'EOS'
 sed -i '/# ex294-prep$/d' /etc/hosts
 rm -f "/etc/sudoers.d/ex294-$STUDENT"
 EOS
   } | on_hosts "$ALL_HOSTS"
-  systemctl disable --now ex294-materials >/dev/null 2>&1
-  rm -f /etc/systemd/system/ex294-materials.service; systemctl daemon-reload
+  if [ "$MAT_SERVER" = python ]; then
+    systemctl disable --now ex294-materials >/dev/null 2>&1
+    rm -f /etc/systemd/system/ex294-materials.service; systemctl daemon-reload
+    firewall-cmd --state >/dev/null 2>&1 && firewall-cmd -q --permanent --remove-port="$MAT_PORT/tcp" && firewall-cmd -q --reload
+  fi
+  # Hanya file yang dibuat prep; isi lain di docroot (DVD, resource Anda sendiri) tidak disentuh
+  for f in balancer.tgz phpinfo.tgz ansible-posix.tar.gz community-general.tar.gz rhel_system_roles.tar.gz \
+           user_list.yml ex294-docs.tar.gz hwreport.empty hosts.j2 hosts.yml salaries.yml; do
+    rm -f "$MAT_ROOT/Rhce/$f"
+  done
   mountpoint -q "$MAT_ROOT/rhel9" && umount "$MAT_ROOT/rhel9"
   sed -i "\#$MAT_ROOT/rhel9#d" /etc/fstab
-  rm -rf "$MAT_ROOT" "$GIT_REPO" "$STATE_DIR"
+  rm -rf "$GIT_REPO" "$STATE_DIR"
   sed -i '/# ex294-prep$/d' /etc/hosts
   rm -f "/etc/sudoers.d/ex294-$STUDENT"
-  firewall-cmd --state >/dev/null 2>&1 && firewall-cmd -q --permanent --remove-port="$MAT_PORT/tcp" && firewall-cmd -q --reload
+  log "Mount DVD di /etc/fstab (bertanda # ex294-prep) tetap dibiarkan; hapus manual bila tidak perlu"
 fi
 log "Cleanup selesai"

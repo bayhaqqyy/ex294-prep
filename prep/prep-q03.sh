@@ -3,7 +3,7 @@ set -uo pipefail
 source "$(dirname "$(readlink -f "$0")")/_lib.sh"
 need_root "$@"
 need_setup
-# Soal 3 — collections. Memastikan tarball tersedia di http://content/Rhce/.
+# Soal 3 — collections. Memastikan tarball tersedia di $CONTENT_URL/.
 #   --reset : hapus isi $WORKDIR/mycollections
 source "$LIB_DIR/_artifacts.sh"
 for c in ansible-posix community-general rhel_system_roles; do
